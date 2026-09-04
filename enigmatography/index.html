@@ -1,0 +1,650 @@
+<title>Enigmatography</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500&family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+  /* Enigmatography — deliberately single-world palette: a lamplit graphite room.
+     Every colour is painted explicitly so the page holds on any host ground. */
+  :root{
+    --ink:#10131c;
+    --ink-2:#161a25;
+    --ink-3:#1d2230;
+    --line:#2b3243;
+    --chalk:#e9e7e0;
+    --chalk-dim:#98a0b2;
+    --chalk-faint:#5d6577;
+
+    --floor:#2c3348;
+    --floor-hi:#39415a;
+    --wall-n:#232941;
+    --wall-n-hi:#2e3552;
+    --wall-w:#1a1f31;
+    --wall-w-hi:#242b41;
+
+    --brass:#e0a458;
+    --brass-dim:#8a6532;
+    --verdigris:#4fd0c0;
+    --rose:#e2626b;
+
+    --shell:min(100%, 1180px);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    background:
+      radial-gradient(120% 90% at 50% 8%, #1a2032 0%, var(--ink) 62%),
+      var(--ink);
+    color:var(--chalk);
+    font-family:"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size:15px;
+    line-height:1.55;
+    min-height:100vh;
+  }
+  .shell{width:var(--shell); margin:0 auto; padding:22px clamp(14px,3vw,28px) 40px}
+
+  header{display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; padding-bottom:14px; border-bottom:1px solid var(--line)}
+  h1{
+    font-family:Fraunces, Georgia, serif;
+    font-weight:500; font-size:clamp(26px,4vw,38px); margin:0;
+    letter-spacing:-.01em; color:var(--chalk); text-wrap:balance;
+  }
+  .tag{
+    font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--brass); border:1px solid var(--brass-dim); border-radius:2px; padding:3px 8px;
+  }
+  header p{margin:0; color:var(--chalk-dim); font-size:14px; flex:1 1 260px; min-width:0}
+
+  main{display:grid; grid-template-columns:minmax(0,1fr) 296px; gap:clamp(16px,2.5vw,30px); align-items:start; margin-top:20px}
+  @media (max-width:880px){ main{grid-template-columns:minmax(0,1fr)} }
+
+  .stage{
+    position:relative;
+    background:linear-gradient(180deg,#151a28 0%, #0e1119 100%);
+    border:1px solid var(--line); border-radius:3px;
+    overflow:hidden;
+  }
+  svg#board{display:block; width:100%; height:auto; touch-action:manipulation}
+
+  /* ---- board surfaces ---- */
+  /* Surface fills. Specificity is ordered on purpose: base < folded < lit
+     < folded+lit < conflict < standing-here. Each step keeps 3 classes so
+     nothing silently loses the cascade. */
+  .sq{stroke:#0d1017; stroke-width:1; cursor:pointer}
+  .sq.face-f{fill:var(--floor)}
+  .sq.face-n{fill:var(--wall-n)}
+  .sq.face-w{fill:var(--wall-w)}
+
+  .sq.face-f.folded{fill:#3a3b46; stroke:var(--brass-dim); stroke-width:1.2}
+  .sq.face-n.folded{fill:#31313f; stroke:var(--brass-dim); stroke-width:1.2}
+  .sq.face-w.folded{fill:#282833; stroke:var(--brass-dim); stroke-width:1.2}
+
+  .sq.face-f.lit{fill:var(--floor-hi)}
+  .sq.face-n.lit{fill:var(--wall-n-hi)}
+  .sq.face-w.lit{fill:var(--wall-w-hi)}
+
+  .sq.face-f.folded.lit{fill:#4c4c58}
+  .sq.face-n.folded.lit{fill:#41414f}
+  .sq.face-w.folded.lit{fill:#363642}
+
+  .sq.face-f.bad, .sq.face-n.bad, .sq.face-w.bad{fill:#4a2530; stroke:var(--rose); stroke-width:1.4}
+  .sq.face-f.here, .sq.face-n.here, .sq.face-w.here{fill:#3f4a6c; stroke:var(--verdigris); stroke-width:1.8}
+  .sq:hover{stroke:var(--chalk-faint)}
+
+  .digit{
+    font-family:"IBM Plex Mono", ui-monospace, monospace;
+    font-size:.62px; text-anchor:middle; dominant-baseline:central;
+    fill:var(--chalk); pointer-events:none;
+  }
+  .digit.given{fill:var(--chalk-dim)}
+  .digit.bad{fill:#ffd0d4}
+
+  .fold-edge{stroke:var(--brass); stroke-width:2; fill:none; opacity:.55; stroke-linecap:round; pointer-events:none}
+  .thread{stroke:var(--brass); stroke-width:2.4; fill:none; opacity:.75; stroke-linejoin:round; stroke-linecap:round; pointer-events:none}
+  .thread.bad{stroke:var(--rose); opacity:.9}
+  .thread-dot{fill:var(--brass); pointer-events:none}
+
+  .avatar-foot{fill:var(--verdigris); opacity:.28; stroke:var(--verdigris); stroke-width:1.4}
+  .avatar-core{fill:var(--verdigris)}
+  .pulse{animation:pulse 2.1s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.28} 50%{opacity:.55}}
+  .exit-mark{fill:none; stroke:var(--brass-dim); stroke-width:2.2; pointer-events:none}
+  .exit-door{fill:#0c0e15; stroke:var(--brass-dim); stroke-width:1.2; pointer-events:none}
+  .exit-door.open{fill:#2a1d0c; stroke:var(--brass)}
+  .exit-mark.open{stroke:var(--brass); filter:drop-shadow(0 0 6px rgba(224,164,88,.8))}
+
+  /* ---- side panel ---- */
+  .panel{display:flex; flex-direction:column; gap:16px}
+  .card{background:var(--ink-2); border:1px solid var(--line); border-radius:3px; padding:14px 15px}
+  .card h2{
+    margin:0 0 9px; font-size:11px; letter-spacing:.15em; text-transform:uppercase;
+    color:var(--brass); font-weight:600;
+  }
+  .rules{margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:9px; font-size:13.5px; color:var(--chalk-dim)}
+  .rules li{display:grid; grid-template-columns:16px minmax(0,1fr); gap:9px}
+  .rules b{color:var(--chalk); font-weight:600}
+  .rules .m{color:var(--brass); font-family:"IBM Plex Mono",monospace; font-size:12px}
+
+  .hud{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:3px; overflow:hidden}
+  .hud div{background:var(--ink-2); padding:9px 11px}
+  .hud dt{margin:0; font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--chalk-faint)}
+  .hud dd{margin:2px 0 0; font-family:"IBM Plex Mono",monospace; font-size:19px; font-variant-numeric:tabular-nums; color:var(--chalk)}
+  .hud dd.warn{color:var(--rose)}
+  .hud dd.ok{color:var(--verdigris)}
+
+  .keys{display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--chalk-dim)}
+  .keys div{display:flex; gap:9px; align-items:baseline}
+  kbd{
+    font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--chalk);
+    background:var(--ink-3); border:1px solid var(--line); border-bottom-width:2px;
+    border-radius:3px; padding:1px 6px; white-space:nowrap;
+  }
+
+  .controls{display:flex; gap:8px; flex-wrap:wrap}
+  button{
+    font:inherit; font-size:13px; color:var(--chalk);
+    background:var(--ink-3); border:1px solid var(--line); border-radius:3px;
+    padding:7px 12px; cursor:pointer;
+  }
+  button:hover{border-color:var(--brass-dim); color:var(--brass)}
+  button:focus-visible, .sq:focus-visible{outline:2px solid var(--verdigris); outline-offset:2px}
+  select{
+    font:inherit; font-size:13px; color:var(--chalk); background:var(--ink-3);
+    border:1px solid var(--line); border-radius:3px; padding:7px 8px;
+  }
+
+  .pad{display:flex; gap:8px; margin-top:14px; justify-content:center; flex-wrap:wrap}
+  .pad button{
+    font-family:"IBM Plex Mono",monospace; font-size:17px; min-width:52px; padding:11px 0;
+  }
+  .pad button.erase{min-width:66px; font-size:14px}
+
+  .status{font-size:13px; color:var(--chalk-dim); min-height:1.5em}
+  .status.win{color:var(--verdigris)}
+  .status.ready{color:var(--brass)}
+
+  .banner{
+    position:absolute; inset:auto 0 0 0; padding:12px 16px;
+    background:linear-gradient(0deg, rgba(16,19,28,.97), rgba(16,19,28,.72));
+    border-top:1px solid var(--brass-dim);
+    display:none; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap;
+  }
+  .banner.show{display:flex}
+  .banner strong{font-family:Fraunces,Georgia,serif; font-weight:500; font-size:19px; color:var(--brass)}
+  .banner span{color:var(--chalk-dim); font-size:13px}
+
+  footer{margin-top:26px; padding-top:14px; border-top:1px solid var(--line); color:var(--chalk-faint); font-size:12.5px}
+
+  @media (prefers-reduced-motion: reduce){
+    .pulse{animation:none; opacity:.42}
+    *{transition:none !important}
+  }
+</style>
+
+<div class="shell">
+  <header>
+    <h1>Enigmatography</h1>
+    <span class="tag">prototype 01 &middot; διπλωμένα πλέγματα</span>
+    <p>Τρεις όψεις 4&times;4 συναντιούνται σε μια γωνία. Τα κελιά της ακμής ανήκουν σε δύο επιφάνειες ταυτόχρονα &mdash; ένα κελί, δύο όψεις, τέσσερις γραμμές.</p>
+  </header>
+
+  <main>
+    <section class="stage">
+      <svg id="board" role="application" aria-label="Ισομετρικό δωμάτιο με διπλωμένο πλέγμα"></svg>
+      <div class="banner" id="banner">
+        <strong id="bannerTitle">Το δωμάτιο λύθηκε</strong>
+        <span id="bannerText">Η πόρτα στον βόρειο τοίχο άνοιξε. Περπάτησε ως εκεί.</span>
+      </div>
+    </section>
+
+    <aside class="panel">
+      <div class="card">
+        <h2>Κανόνες</h2>
+        <ul class="rules">
+          <li><span class="m">1</span><span>Κάθε γραμμή και στήλη <b>κάθε όψης</b> έχει τα 1&ndash;4 από μία φορά.</span></li>
+          <li><span class="m">2</span><span>Τα <b>ορειχάλκινα</b> κελιά είναι διπλωμένα πάνω στην ακμή: το ίδιο κελί φαίνεται σε δύο όψεις και μετράει και στις δύο.</span></li>
+          <li><span class="m">3</span><span>Γράφεις <b>μόνο στο κελί που πατάς</b>.</span></li>
+          <li><span class="m">4</span><span>Λύσε το δωμάτιο, άνοιξε την πόρτα, βγες.</span></li>
+        </ul>
+      </div>
+
+      <dl class="hud">
+        <div><dt>Κελιά</dt><dd id="hudFill">0/40</dd></div>
+        <div><dt>Συγκρούσεις</dt><dd id="hudBad">0</dd></div>
+      </dl>
+
+      <div class="card">
+        <h2>Χειρισμός</h2>
+        <div class="keys">
+          <div><kbd>&larr;&uarr;&darr;&rarr;</kbd><span>περπάτημα (και γύρω από τις ακμές)</span></div>
+          <div><kbd>κλικ</kbd><span>πήγαινε σε κελί</span></div>
+          <div><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd><span>γράψε</span></div>
+          <div><kbd>&#9003;</kbd><span>σβήσε</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Γρίφος</h2>
+        <div class="controls">
+          <select id="diff" aria-label="Δυσκολία">
+            <option value="easy">Εύκολο</option>
+            <option value="normal" selected>Κανονικό</option>
+            <option value="hard">Δύσκολο</option>
+          </select>
+          <button id="again" type="button">Νέο δωμάτιο</button>
+        </div>
+        <p class="status" id="status">Στέκεσαι στη μπροστινή γωνία του πατώματος.</p>
+      </div>
+    </aside>
+  </main>
+
+  <div class="pad">
+    <button type="button" data-v="1">1</button>
+    <button type="button" data-v="2">2</button>
+    <button type="button" data-v="3">3</button>
+    <button type="button" data-v="4">4</button>
+    <button type="button" class="erase" data-v="0">σβήσε</button>
+  </div>
+
+  <footer>
+    Δοκιμή μηχανικής, όχι παιχνίδι: το ζητούμενο είναι αν το δίπλωμα &mdash; ένα κελί που ζει σε δύο επίπεδα &mdash; γίνεται αντιληπτό χωρίς εξήγηση.
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const N = 4;
+
+  /* ---------------------------------------------------------------
+     LOGICAL MODEL
+     Cells are identified across faces: the floor's front row IS the
+     north wall's bottom row, and the floor's left column IS the west
+     wall's bottom row. The corner cell belongs to all three.
+  --------------------------------------------------------------- */
+  const F  = (r,c) => "F"+r+c;
+  const NC = (h,c) => h === 0 ? F(0,c) : "N"+h+c;   // north wall, height h, column c
+  const WC = (h,r) => h === 0 ? F(r,0) : "W"+h+r;   // west  wall, height h, depth r
+
+  const CELLS = [];
+  for (let r=0;r<N;r++) for (let c=0;c<N;c++) CELLS.push(F(r,c));
+  for (let h=1;h<N;h++) for (let c=0;c<N;c++) CELLS.push("N"+h+c);
+  for (let h=1;h<N;h++) for (let r=0;r<N;r++) CELLS.push("W"+h+r);
+
+  const EXIT = NC(3,3);
+  const START = F(3,3);
+
+  // square keys (what gets drawn) — a folded cell owns two or three squares
+  const sqF = (r,c)=>"f"+r+c, sqN=(h,c)=>"n"+h+c, sqW=(h,r)=>"w"+h+r;
+
+  // Lines: cells that must hold 1..4 once each, plus the square path used
+  // to draw the line on the surface (so a folded line visibly bends).
+  const LINES = [];
+  for (let r=0;r<N;r++) LINES.push({cells:[...Array(N)].map((_,c)=>F(r,c)), path:[...Array(N)].map((_,c)=>sqF(r,c))});
+  for (let c=0;c<N;c++) LINES.push({cells:[...Array(N)].map((_,r)=>F(r,c)), path:[...Array(N)].map((_,r)=>sqF(r,c))});
+  for (let h=1;h<N;h++) LINES.push({cells:[...Array(N)].map((_,c)=>NC(h,c)), path:[...Array(N)].map((_,c)=>sqN(h,c))});
+  for (let c=0;c<N;c++) LINES.push({cells:[...Array(N)].map((_,h)=>NC(h,c)), path:[sqF(0,c), ...[...Array(N)].map((_,h)=>sqN(h,c))]});
+  for (let h=1;h<N;h++) LINES.push({cells:[...Array(N)].map((_,r)=>WC(h,r)), path:[...Array(N)].map((_,r)=>sqW(h,r))});
+  for (let r=0;r<N;r++) LINES.push({cells:[...Array(N)].map((_,h)=>WC(h,r)), path:[sqF(r,0), ...[...Array(N)].map((_,h)=>sqW(h,r))]});
+
+  const cellLines = new Map(CELLS.map(id=>[id,[]]));
+  LINES.forEach((l,i)=>l.cells.forEach(id=>cellLines.get(id).push(i)));
+
+  /* ---------------------------------------------------------------
+     GENERATOR / SOLVER
+  --------------------------------------------------------------- */
+  function shuffle(a){ for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0; [a[i],a[j]]=[a[j],a[i]];} return a; }
+
+  function candidates(state,id){
+    const used = new Set();
+    for (const li of cellLines.get(id))
+      for (const other of LINES[li].cells)
+        if (other !== id && state[other]) used.add(state[other]);
+    const out=[];
+    for (let v=1;v<=N;v++) if(!used.has(v)) out.push(v);
+    return out;
+  }
+
+  function pickCell(state){
+    let best=null, bestC=null;
+    for (const id of CELLS){
+      if (state[id]) continue;
+      const c = candidates(state,id);
+      if (c.length === 0) return {id, cands:[]};
+      if (!bestC || c.length < bestC.length){ best=id; bestC=c; if(c.length===1) break; }
+    }
+    return best ? {id:best, cands:bestC} : null;
+  }
+
+  function fillRandom(state){
+    const pick = pickCell(state);
+    if (!pick) return true;
+    if (!pick.cands.length) return false;
+    for (const v of shuffle(pick.cands.slice())){
+      state[pick.id] = v;
+      if (fillRandom(state)) return true;
+      state[pick.id] = 0;
+    }
+    return false;
+  }
+
+  function countSolutions(state, cap){
+    const pick = pickCell(state);
+    if (!pick) return 1;
+    if (!pick.cands.length) return 0;
+    let n = 0;
+    for (const v of pick.cands){
+      state[pick.id] = v;
+      n += countSolutions(state, cap - n);
+      state[pick.id] = 0;
+      if (n >= cap) break;
+    }
+    return n;
+  }
+
+  function makePuzzle(diff){
+    const blank = () => Object.fromEntries(CELLS.map(id=>[id,0]));
+    const solution = blank();
+    fillRandom(solution);
+    const given = Object.assign({}, solution);
+    const budget = diff === "easy" ? 16 : diff === "normal" ? 24 : 40;
+    let removed = 0;
+    for (const id of shuffle(CELLS.slice())){
+      if (removed >= budget) break;
+      if (id === EXIT) continue;              // the door tile stays engraved
+      const keep = given[id];
+      given[id] = 0;
+      if (countSolutions(Object.assign({}, given), 2) !== 1){ given[id] = keep; }
+      else removed++;
+    }
+    return {solution, given};
+  }
+
+  /* ---------------------------------------------------------------
+     ISOMETRIC PROJECTION
+     world: x right-back, y left-back, z up.  corner of the room = origin
+  --------------------------------------------------------------- */
+  const U = 46, COS = Math.cos(Math.PI/6), SIN = Math.sin(Math.PI/6);
+  const P  = (x,y,z) => [ (x-y)*COS*U, (x+y)*SIN*U - z*U ];
+  const D  = (x,y,z) => [ (x-y)*COS*U, (x+y)*SIN*U - z*U ]; // direction deltas project the same way
+
+  const SQUARES = new Map();   // key -> {cell, face, pts, mat, centre}
+  function addSquare(key, cell, face, corners, origin, ex, ey){
+    const pts = corners.map(p=>P.apply(null,p));
+    const o = P.apply(null, origin);
+    const cx = pts.reduce((s,p)=>s+p[0],0)/pts.length;
+    const cy = pts.reduce((s,p)=>s+p[1],0)/pts.length;
+    SQUARES.set(key, {
+      cell, face, centre:[cx,cy],
+      d: "M" + pts.map(p=>p[0].toFixed(2)+" "+p[1].toFixed(2)).join("L") + "Z",
+      mat: "matrix("+[ex[0],ex[1],ey[0],ey[1],o[0],o[1]].map(n=>n.toFixed(3)).join(",")+")"
+    });
+  }
+
+  for (let r=0;r<N;r++) for (let c=0;c<N;c++)
+    addSquare(sqF(r,c), F(r,c), "f",
+      [[c,r,0],[c+1,r,0],[c+1,r+1,0],[c,r+1,0]],
+      [c,r,0], D(1,0,0), D(0,1,0));
+
+  for (let h=0;h<N;h++) for (let c=0;c<N;c++)
+    addSquare(sqN(h,c), NC(h,c), "n",
+      [[c,0,h],[c+1,0,h],[c+1,0,h+1],[c,0,h+1]],
+      [c,0,h+1], D(1,0,0), D(0,0,-1));
+
+  for (let h=0;h<N;h++) for (let r=0;r<N;r++)
+    addSquare(sqW(h,r), WC(h,r), "w",
+      [[0,r,h],[0,r+1,h],[0,r+1,h+1],[0,r,h+1]],
+      [0,r+1,h+1], D(0,-1,0), D(0,0,-1));
+
+  // a cell may be drawn as several squares (that is the whole point)
+  const cellSquares = new Map(CELLS.map(id=>[id,[]]));
+  SQUARES.forEach((s,key)=>cellSquares.get(s.cell).push(key));
+  const isFolded = id => cellSquares.get(id).length > 1;
+
+  /* ---------------------------------------------------------------
+     ADJACENCY — walking wraps around the edges
+  --------------------------------------------------------------- */
+  const nbrs = new Map(CELLS.map(id=>[id,new Set()]));
+  const link = (a,b)=>{ if(a!==b){ nbrs.get(a).add(b); nbrs.get(b).add(a); } };
+  for (let r=0;r<N;r++) for (let c=0;c<N;c++){
+    if (c+1<N) link(F(r,c), F(r,c+1));
+    if (r+1<N) link(F(r,c), F(r+1,c));
+  }
+  for (let h=0;h<N;h++) for (let c=0;c<N;c++){
+    if (c+1<N) link(NC(h,c), NC(h,c+1));
+    if (h+1<N) link(NC(h,c), NC(h+1,c));
+  }
+  for (let h=0;h<N;h++) for (let r=0;r<N;r++){
+    if (r+1<N) link(WC(h,r), WC(h,r+1));
+    if (h+1<N) link(WC(h,r), WC(h+1,r));
+  }
+  for (let h=0;h<N;h++) link(NC(h,0), WC(h,0));   // the vertical corner
+
+  function pathTo(from, to){
+    if (from === to) return [];
+    const prev = new Map([[from,null]]);
+    const q = [from];
+    while (q.length){
+      const cur = q.shift();
+      if (cur === to) break;
+      for (const nb of nbrs.get(cur)) if (!prev.has(nb)){ prev.set(nb,cur); q.push(nb); }
+    }
+    if (!prev.has(to)) return [];
+    const out=[];
+    for (let cur=to; cur!==from; cur=prev.get(cur)) out.unshift(cur);
+    return out;
+  }
+
+  /* ---------------------------------------------------------------
+     STATE + RENDER
+  --------------------------------------------------------------- */
+  const svg = document.getElementById("board");
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs) => { const n=document.createElementNS(SVGNS,tag); for(const k in attrs) n.setAttribute(k,attrs[k]); return n; };
+
+  const minX = -N*COS*U - 26, boxW = 2*N*COS*U + 52;
+  const minY = -N*U - 30,     boxH = 2*N*U + 62;
+  svg.setAttribute("viewBox", [minX,minY,boxW,boxH].join(" "));
+
+  const gSurf   = el("g",{});
+  const gFold   = el("g",{});
+  const gThread = el("g",{});
+  const gText   = el("g",{});
+  const gActor  = el("g",{});
+  svg.append(gSurf, gFold, gThread, gText, gActor);
+
+  let state = {}, given = {}, solution = {}, here = START, opened = false, escaped = false;
+  const nodes = new Map();  // square key -> {path, text}
+
+  // draw order: back walls first, then the floor in front of them
+  const drawOrder = [];
+  for (let h=N-1;h>=0;h--) for (let r=0;r<N;r++) drawOrder.push(sqW(h,r));
+  for (let h=N-1;h>=0;h--) for (let c=0;c<N;c++) drawOrder.push(sqN(h,c));
+  for (let r=0;r<N;r++) for (let c=0;c<N;c++) drawOrder.push(sqF(r,c));
+
+  for (const key of drawOrder){
+    const s = SQUARES.get(key);
+    const p = el("path", {d:s.d, class:"sq face-"+s.face, tabindex:"-1"});
+    p.addEventListener("click", ()=>walkTo(s.cell));
+    gSurf.appendChild(p);
+    const t = el("text", {class:"digit", x:"0.5", y:"0.5", transform:s.mat});
+    gText.appendChild(t);
+    nodes.set(key, {path:p, text:t});
+  }
+
+  // brass hairlines along the two folds and the vertical corner
+  const foldLine = (a,b)=>gFold.appendChild(el("path",{class:"fold-edge", d:"M"+P.apply(null,a).join(" ")+"L"+P.apply(null,b).join(" ")}));
+  foldLine([0,0,0],[N,0,0]);
+  foldLine([0,0,0],[0,N,0]);
+  foldLine([0,0,0],[0,0,N]);
+
+  const exitSq = SQUARES.get(sqN(3,3));
+  const exitMark = el("path",{class:"exit-mark", d:exitSq.d});
+  const exitDoor = el("path",{class:"exit-door", transform:exitSq.mat,
+    d:"M0.24 1 L0.24 0.42 A0.26 0.26 0 0 1 0.76 0.42 L0.76 1 Z"});
+  gFold.append(exitMark, exitDoor);
+
+  function conflicts(){
+    const bad = new Set(); const badLines = new Set();
+    LINES.forEach((l,i)=>{
+      const seen = new Map();
+      for (const id of l.cells){
+        const v = state[id];
+        if (!v) continue;
+        if (seen.has(v)){ bad.add(id); bad.add(seen.get(v)); badLines.add(i); }
+        else seen.set(v,id);
+      }
+    });
+    return {bad, badLines};
+  }
+
+  function render(){
+    const {bad, badLines} = conflicts();
+    const hereLines = new Set(cellLines.get(here));
+    const litCells = new Set();
+    for (const li of hereLines) LINES[li].cells.forEach(id=>litCells.add(id));
+
+    for (const [key,{path,text}] of nodes){
+      const s = SQUARES.get(key), id = s.cell, v = state[id];
+      path.setAttribute("class", [
+        "sq", "face-"+s.face,
+        isFolded(id) ? "folded" : "",
+        litCells.has(id) ? "lit" : "",
+        bad.has(id) ? "bad" : "",
+        id === here ? "here" : ""
+      ].filter(Boolean).join(" "));
+      text.textContent = v ? v : "";
+      text.setAttribute("class", "digit" + (given[id] ? " given" : "") + (bad.has(id) ? " bad" : ""));
+    }
+
+    // the threads through the cell you stand on — these are what bend over the fold
+    gThread.textContent = "";
+    for (const li of hereLines){
+      const pts = LINES[li].path.map(k=>SQUARES.get(k).centre);
+      gThread.appendChild(el("polyline",{
+        class:"thread" + (badLines.has(li) ? " bad" : ""),
+        points: pts.map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" ")
+      }));
+    }
+
+    // actor
+    gActor.textContent = "";
+    for (const key of cellSquares.get(here)){
+      const s = SQUARES.get(key);
+      gActor.appendChild(el("path",{class:"avatar-foot pulse", d:s.d}));
+    }
+    const main = SQUARES.get(cellSquares.get(here)[0]).centre;
+    gActor.appendChild(el("circle",{class:"avatar-core", cx:main[0], cy:main[1], r:5.5}));
+
+    const filled = CELLS.filter(id=>state[id]).length;
+    document.getElementById("hudFill").textContent = filled + "/" + CELLS.length;
+    const badEl = document.getElementById("hudBad");
+    badEl.textContent = bad.size;
+    badEl.className = bad.size ? "warn" : (filled === CELLS.length ? "ok" : "");
+
+    const solved = filled === CELLS.length && bad.size === 0;
+    if (solved && !opened){ opened = true; exitMark.classList.add("open"); exitDoor.classList.add("open"); }
+    if (!solved && opened && !escaped){ opened = false; exitMark.classList.remove("open"); exitDoor.classList.remove("open"); }
+
+    const banner = document.getElementById("banner");
+    if (escaped){
+      banner.classList.add("show");
+      document.getElementById("bannerTitle").textContent = "Βγήκες.";
+      document.getElementById("bannerText").textContent = "Το δωμάτιο λύθηκε και η πόρτα πέρασε. Πάτα «Νέο δωμάτιο».";
+    } else if (opened){
+      banner.classList.add("show");
+      document.getElementById("bannerTitle").textContent = "Το δωμάτιο λύθηκε";
+      document.getElementById("bannerText").textContent = "Η πόρτα ψηλά στον βόρειο τοίχο άνοιξε. Περπάτησε ως εκεί.";
+    } else {
+      banner.classList.remove("show");
+    }
+  }
+
+  function say(msg, cls){
+    const s = document.getElementById("status");
+    s.textContent = msg;
+    s.className = "status" + (cls ? " "+cls : "");
+  }
+
+  function describe(id){
+    if (isFolded(id)) return "Διπλωμένο κελί: μετράει σε τέσσερις γραμμές ταυτόχρονα.";
+    if (id[0] === "N") return "Βόρειος τοίχος.";
+    if (id[0] === "W") return "Δυτικός τοίχος.";
+    return "Πάτωμα.";
+  }
+
+  /* ---- movement ---- */
+  let walking = null;
+  function stepTo(id){
+    here = id;
+    if (opened && id === EXIT && !escaped){ escaped = true; }
+    render();
+    if (!escaped) say(describe(id));
+    else say("Έξοδος. Ο γρίφος στέκει;", "win");
+  }
+  function walkTo(target){
+    if (walking) { clearInterval(walking); walking = null; }
+    const path = pathTo(here, target);
+    if (!path.length) return;
+    let i = 0;
+    walking = setInterval(()=>{
+      stepTo(path[i++]);
+      if (i >= path.length){ clearInterval(walking); walking = null; }
+    }, 85);
+  }
+  // screen-relative stepping: pick the neighbour whose on-screen direction
+  // best matches the arrow you pressed. Crossing an edge just works.
+  function nudge(dx,dy){
+    const from = SQUARES.get(cellSquares.get(here)[0]).centre;
+    let best=null, bestScore=-Infinity;
+    for (const nb of nbrs.get(here)){
+      for (const key of cellSquares.get(nb)){
+        const to = SQUARES.get(key).centre;
+        const vx = to[0]-from[0], vy = to[1]-from[1];
+        const len = Math.hypot(vx,vy) || 1;
+        const score = (vx/len)*dx + (vy/len)*dy;
+        if (score > bestScore){ bestScore = score; best = nb; }
+      }
+    }
+    if (best && bestScore > 0.25) stepTo(best);
+  }
+
+  function write(v){
+    if (given[here]) { say("Αυτό το κελί είναι χαραγμένο — δεν αλλάζει."); return; }
+    state[here] = v;
+    render();
+    if (v && !escaped) say(describe(here));
+  }
+
+  /* ---- input ---- */
+  addEventListener("keydown", e=>{
+    const k = e.key;
+    if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","w","a","s","d","W","A","S","D"].includes(k)) e.preventDefault();
+    if (k==="ArrowLeft"||k==="a"||k==="A")  nudge(-1,0);
+    else if (k==="ArrowRight"||k==="d"||k==="D") nudge(1,0);
+    else if (k==="ArrowUp"||k==="w"||k==="W")    nudge(0,-1);
+    else if (k==="ArrowDown"||k==="s"||k==="S")  nudge(0,1);
+    else if (k>="1" && k<="4") write(+k);
+    else if (k==="0"||k==="Backspace"||k==="Delete") write(0);
+  });
+  document.querySelectorAll(".pad button").forEach(b=>{
+    b.addEventListener("click", ()=>write(+b.dataset.v));
+  });
+
+  /* ---- new room ---- */
+  function newRoom(){
+    const p = makePuzzle(document.getElementById("diff").value);
+    solution = p.solution;
+    given = p.given;
+    state = Object.assign({}, p.given);
+    here = START; opened = false; escaped = false;
+    exitMark.classList.remove("open"); exitDoor.classList.remove("open");
+    render();
+    const clues = CELLS.filter(id=>given[id]).length;
+    say("Νέο δωμάτιο: " + clues + " χαραγμένα κελιά. Στέκεσαι στη μπροστινή γωνία.", "ready");
+  }
+  document.getElementById("again").addEventListener("click", newRoom);
+  document.getElementById("diff").addEventListener("change", newRoom);
+
+  newRoom();
+})();
+</script>
