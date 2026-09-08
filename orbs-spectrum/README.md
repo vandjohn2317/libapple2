@@ -55,7 +55,26 @@ carries a BASIC loader that does `CLEAR 32767: LOAD "" CODE: RANDOMIZE USR
   floors, you arrive at floor N at about level N.
 * **The floor's furniture.** Gold, keys, and chests that can be picked with
   Thievery (capped at 35%, however high it climbs), opened with a key, or
-  beaten open — which destroys what is inside 93 times in 100.
+  beaten open — which destroys what is inside 93 times in 100. An opened chest
+  is gone, not a wreck left standing in the corridor.
+
+## Playing it
+
+`W A S D` or `5 6 7 8`, or a Kempston stick. **One press faces that way and
+takes the step**: the Godot build spends a press on turning and the next one
+on walking, because there the camera swings round with you, but on a keyboard
+that only ever read as a dropped key. Walking into rock still just turns you,
+which is what looking round a corner is, and it costs no turn.
+
+Walk into things to use them: a monster to fight it, a door to open it, a
+chest to try its lock. Gold and keys are picked up by stepping on them, and
+the stairs take you down as soon as you stand on them.
+
+The keyboard is read by the frame interrupt, which latches the moment a key
+goes **down**. That matters because drawing a turn takes most of half a second
+and the game is not looking at the keyboard while it does: without the latch,
+a tap inside that window is a tap the game never sees. Holding a direction
+walks, after a short delay.
 
 ## The screen
 
@@ -69,8 +88,15 @@ Godot build's shader performs, done once at build time instead of every frame.
 
 Colour is one ink per 8×8 cell, so **everything is aligned to the cell grid**
 and attribute clash never happens: a monster occupies exactly the four cells of
-its tile. A tile in view is drawn `BRIGHT` and one only remembered is drawn in
-the same ink without it, which is the fog of war for nothing.
+its tile.
+
+Every tile is built twice: once as it looks **in view** and once as it looks
+when it is only **remembered**. The remembered copy drops a tone and turns the
+isolated-pixel rule off, so a wall goes from solid brick to a checker and a
+floor keeps a quarter of its specks — and it is drawn in the same ink without
+`BRIGHT`. Dimming the ink alone was not enough: the explored half of a floor
+came out as solid blocks of dark yellow, as loud as the part you were standing
+in. Two hundred and forty bytes of tiles buys the whole fog of war.
 
 Sprites carry a mask that is the sprite dilated by one pixel, so a figure
 always stands in a one-pixel halo of paper and never merges with the floor

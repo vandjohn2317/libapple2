@@ -39,8 +39,7 @@ static uint8_t item_sprite(uint8_t kind)
     switch (kind) {
     case IT_GOLD: return S_GOLD;
     case IT_KEY: return S_KEY;
-    case IT_CHEST:
-    case IT_CHEST_OPEN: return S_CHEST;
+    case IT_CHEST: return S_CHEST;
     case IT_BOOK: return S_BOOK;
     default: return S_ORB;
     }
@@ -52,7 +51,6 @@ static uint8_t item_ink(uint8_t kind)
     case IT_GOLD: return YELLOW | BRIGHT;
     case IT_KEY: return WHITE | BRIGHT;
     case IT_CHEST: return YELLOW | BRIGHT;
-    case IT_CHEST_OPEN: return YELLOW;
     case IT_BOOK: return MAGENTA | BRIGHT;
     default: return CYAN | BRIGHT;
     }
@@ -105,8 +103,14 @@ void draw_viewport(void)
                 clear_tile(cr);
                 continue;
             }
-            blit_src = TILE_PTR(tile_art(row));
-            blit_attr = hue() | (BM_GET(seen, row) ? BRIGHT : 0);
+            if (BM_GET(seen, row)) {
+                blit_src = TILE_PTR(tile_art(row));
+                blit_attr = hue() | BRIGHT;
+            } else {
+                /* remembered: the dimmer pattern as well as the dimmer ink */
+                blit_src = TILE_DIM_PTR(tile_art(row));
+                blit_attr = hue();
+            }
             blit_tile(cr);
         }
     }

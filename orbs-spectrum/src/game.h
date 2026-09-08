@@ -141,9 +141,8 @@ extern Enemy enemies[MAX_ENEMIES];
 #define IT_GOLD 1
 #define IT_KEY 2
 #define IT_CHEST 3
-#define IT_CHEST_OPEN 4
-#define IT_BOOK 5
-#define IT_ORB 6
+#define IT_BOOK 4
+#define IT_ORB 5
 
 #define MAX_ITEMS 40
 typedef struct {

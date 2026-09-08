@@ -88,6 +88,10 @@ def live_enemies(s):
     return out
 
 
+def enemy_here(s, x, y):
+    return any((e["x"], e["y"]) == (x, y) for e in live_enemies(s))
+
+
 def items(s):
     base = s.addr("items")
     out = []
@@ -189,6 +193,81 @@ def test_bumping_a_monster_fights_it():
     line = text(s, "log_line")
     assert ("HIT" in line or "MISS" in line or "CRIT" in line), f"no exchange: {line!r}"
     assert (px(s), py(s)) == (x, y), "the hero walked through the monster"
+
+
+def test_one_press_turns_and_goes():
+    """A direction faces that way AND takes the step, in one press.
+
+    The Godot build spends a press on turning and the next on walking; on the
+    keyboard that read as a dropped key. This is the regression test for it.
+    """
+    s = boot()
+    assert start_run(s)
+    x, y = px(s), py(s)
+    for key, dx, dy, facing in (("W", 0, -1, 0), ("D", 1, 0, 1), ("S", 0, 1, 2), ("A", -1, 0, 3)):
+        if tile(s, x + dx, y + dy) not in (1, 2, 4):
+            continue
+        if enemy_here(s, x + dx, y + dy):
+            continue
+        if (x + dx, y + dy) in [(i["x"], i["y"]) for i in items(s) if i["kind"] == 3]:
+            continue
+        # point the hero somewhere else first, so the press HAS a turn to make
+        s.poke(s.addr("player") + P["facing"][0], bytes([(facing + 2) & 3]))
+        s.tap(key, 3, 4)
+        s.frame(40)
+        assert (px(s), py(s)) == (x + dx, y + dy), \
+            f"one press did not move the hero ({key})"
+        assert player_field(s, "facing") == facing, "the hero did not turn to face the way it walked"
+        return
+    pytest.skip("the hero is walled in")
+
+
+def test_a_press_during_the_redraw_is_not_lost():
+    """The interrupt latches keys, so a press that comes and goes while the
+    screen is being drawn still counts."""
+    s = boot()
+    assert start_run(s)
+    x, y = px(s), py(s)
+    for key, dx, dy in (("W", 0, -1), ("D", 1, 0), ("S", 0, 1), ("A", -1, 0)):
+        if tile(s, x + dx, y + dy) in (1, 2, 4):
+            break
+    else:
+        pytest.skip("the hero is walled in")
+    # face that way first, then tap so briefly that only the interrupt can see it
+    s.tap(key, 3, 6)
+    s.frame(40)
+    x, y = px(s), py(s)
+    if tile(s, x + dx, y + dy) not in (1, 2, 4):
+        pytest.skip("the way ahead closed")
+    s.press(key)
+    s.frame(1)
+    s.release(key)
+    s.frame(50)
+    assert (px(s), py(s)) == (x + dx, y + dy), "a one-frame press was lost"
+
+
+def test_an_opened_chest_leaves_the_way_clear():
+    """A smashed chest used to stay on its tile and wall off the corridor."""
+    s = boot()
+    assert start_run(s)
+    x, y = px(s), py(s)
+    for key, dx, dy, facing in (("S", 0, 1, 2), ("W", 0, -1, 0), ("D", 1, 0, 1), ("A", -1, 0, 3)):
+        if tile(s, x + dx, y + dy) == 1 and not enemy_here(s, x + dx, y + dy):
+            break
+    else:
+        pytest.skip("nowhere to put a chest")
+    # clear the tables, put one chest in the way, and hand over a key
+    s.poke(s.addr("items"), bytes(40 * ITEM_SIZE))
+    s.poke(s.addr("items"), bytes([3, x + dx, y + dy, 30, 40]))
+    s.poke(s.addr("player") + P["keys"][0], bytes([1]))
+    s.poke(s.addr("player") + P["facing"][0], bytes([facing]))
+    s.tap(key, 3, 4)
+    s.frame(50)
+    left = [i for i in items(s) if i["kind"] == 3 and (i["x"], i["y"]) == (x + dx, y + dy)]
+    assert not left, "the chest is still standing there"
+    s.tap(key, 3, 4)
+    s.frame(50)
+    assert (px(s), py(s)) == (x + dx, y + dy), "the hero cannot walk over the opened chest"
 
 
 def test_the_stairs_lead_down():

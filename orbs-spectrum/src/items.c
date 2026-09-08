@@ -132,14 +132,15 @@ static void spawn_treasure_near(Item *chest)
 void bump_chest(Item *it)
 {
     uint8_t chance;
-    if (it->kind == IT_CHEST_OPEN) {
-        log_set(log_line, "THE CHEST IS EMPTY");
-        return;
-    }
+    /* An opened chest is GONE, not a wreck standing in the doorway. It used
+     * to become IT_CHEST_OPEN and stay where it was -- and since walking into
+     * a chest bumps it rather than stepping onto it, a chest smashed in a
+     * one-tile corridor walled the corridor off for the rest of the floor.
+     * Reported with the stairs on the far side of one. */
     if (player.keys) {
         player.keys--;
-        it->kind = IT_CHEST_OPEN;
         spawn_treasure_near(it);
+        it->kind = IT_NONE;
         log_set(log_line, "UNLOCKED WITH A KEY");
         return;
     }
@@ -147,8 +148,8 @@ void bump_chest(Item *it)
     if (chance > THIEVERY_MAX_PERCENT)
         chance = THIEVERY_MAX_PERCENT;
     if (rnd_chance(chance)) {
-        it->kind = IT_CHEST_OPEN;
         spawn_treasure_near(it);
+        it->kind = IT_NONE;
         log_set(log_line, "THE LOCK GIVES");
         return;
     }
@@ -156,13 +157,13 @@ void bump_chest(Item *it)
     {
         uint8_t blow = player_swing();
         if (blow >= it->b) {
-            it->kind = IT_CHEST_OPEN;
             if (rnd_chance(CHEST_SMASH_TREASURE_PERCENT)) {
                 spawn_treasure_near(it);
                 log_set(log_line, "SMASHED -- SOMETHING SURVIVED");
             } else {
                 log_set(log_line, "SMASHED -- NOTHING SURVIVED");
             }
+            it->kind = IT_NONE;
         } else {
             it->b -= blow;
             log_set(log_line, "THE LOCK HOLDS. YOU HIT IT ");

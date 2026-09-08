@@ -22,70 +22,78 @@ char world_line[33];
 #define IN_MAP 64
 #define IN_ANY 128
 
-static uint8_t read_input(void)
+/* THE KEYS.
+ *
+ * `kbd` is what went down since the game last asked and `kbd_down` is what is
+ * down right now, both filled by the frame interrupt. A press is acted on
+ * once, when it goes down -- so a tap that happened while the screen was
+ * being drawn still counts, and a key held across a turn is not a second
+ * press. Holding one walks: after REPEAT_DELAY frames of it being down the
+ * turn loop takes it again, every REPEAT_RATE frames after that.
+ */
+#define REPEAT_DELAY 12
+#define REPEAT_RATE 5
+
+static uint8_t decode(const uint8_t *rows)
 {
-    uint8_t v = 0, j;
-    kbd_scan();
-    if (K_W || K_7) v |= IN_UP;
-    if (K_S || K_6) v |= IN_DOWN;
-    if (K_A || K_5) v |= IN_LEFT;
-    if (K_D || K_8) v |= IN_RIGHT;
-    if (K_SPACE || K_ENTER || K_F) v |= IN_FIRE;
-    if (K_X) v |= IN_SEARCH;
-    if (K_M) v |= IN_MAP;
-    j = kempston();
-    if (j & 1) v |= IN_RIGHT;
-    if (j & 2) v |= IN_LEFT;
-    if (j & 4) v |= IN_DOWN;
-    if (j & 8) v |= IN_UP;
-    if (j & 16) v |= IN_FIRE;
-    if (kbd[0] | kbd[1] | kbd[2] | kbd[3] | kbd[4] | kbd[5] | kbd[6] | kbd[7] | j)
+    uint8_t v = 0;
+    if (key_in(rows, KB_W) || key_in(rows, KB_7) || key_in(rows, KB_JOY_UP))
+        v |= IN_UP;
+    if (key_in(rows, KB_S) || key_in(rows, KB_6) || key_in(rows, KB_JOY_DOWN))
+        v |= IN_DOWN;
+    if (key_in(rows, KB_A) || key_in(rows, KB_5) || key_in(rows, KB_JOY_LEFT))
+        v |= IN_LEFT;
+    if (key_in(rows, KB_D) || key_in(rows, KB_8) || key_in(rows, KB_JOY_RIGHT))
+        v |= IN_RIGHT;
+    if (key_in(rows, KB_SPACE) || key_in(rows, KB_ENTER) || key_in(rows, KB_F)
+        || key_in(rows, KB_JOY_FIRE))
+        v |= IN_FIRE;
+    if (key_in(rows, KB_X))
+        v |= IN_SEARCH;
+    if (key_in(rows, KB_M))
+        v |= IN_MAP;
+    if (v || rows[0] || rows[1] || rows[2] || rows[3] || rows[4] || rows[5]
+        || rows[6] || rows[7] || rows[8])
         v |= IN_ANY;
     return v;
 }
 
-/* A fresh press: the key must have been up since the last one. Holding a
- * key walks at a steady pace after a short delay, as a joystick would. */
-static uint8_t prev_input;
-static uint8_t hold_frames;
+static uint8_t held_frames;
 
 uint8_t wait_key(void)
 {
     for (;;) {
-        uint8_t v;
+        uint8_t fresh, held;
         sys_halt();
-        v = read_input();
-        if (v & ~IN_ANY) {
-            if ((v & ~prev_input & ~IN_ANY) || hold_frames > 12) {
-                if (!(v & ~prev_input & ~IN_ANY))
-                    hold_frames = 8;
-                else
-                    hold_frames = 0;
-                prev_input = v;
-                return v;
-            }
-            hold_frames++;
-        } else {
-            hold_frames = 0;
+        kbd_take();
+        fresh = decode(kbd) & ~IN_ANY;
+        held = decode(kbd_down) & ~IN_ANY;
+        if (fresh) {
+            held_frames = 0;
+            return fresh;
         }
-        prev_input = v;
+        if (held) {
+            if (++held_frames >= REPEAT_DELAY) {
+                held_frames = REPEAT_DELAY - REPEAT_RATE;
+                return held;
+            }
+        } else {
+            held_frames = 0;
+        }
     }
 }
 
+/* Wait for a key that is pressed AFTER this is called, so a key still down
+ * from the last screen does not answer this one. */
 static void wait_any_key(void)
 {
-    /* wait for all keys up, then for one down */
+    kbd_take();
     for (;;) {
         sys_halt();
-        if (!(read_input() & IN_ANY))
-            break;
+        kbd_take();
+        if (decode(kbd) & IN_ANY)
+            return;
     }
-    for (;;) {
-        sys_halt();
-        if (read_input() & IN_ANY)
-            break;
-    }
-    prev_input = IN_ANY | 0x7F;
 }
 
 /* Building a floor takes a second or two of Z80: the walk, the search for
@@ -189,18 +197,22 @@ static void open_door(uint8_t x, uint8_t y)
     log_set(log_line, "THE DOOR SWINGS OPEN");
 }
 
+/* ONE PRESS TURNS AND GOES.
+ *
+ * The Godot build spends a press on turning and the next one on walking,
+ * because there the camera swings round with you and the turn is a thing you
+ * do on purpose. Here it only ever read as a dropped key: press left, nothing
+ * moves, press left again, now it does. So a direction sets the facing AND
+ * takes the step in the same turn. Walking into rock still only turns you --
+ * and that is what looking round a corner is now, and it still costs nothing.
+ */
 static void try_move(uint8_t face)
 {
     uint8_t nx, ny, t;
     Enemy *e;
     Item *it;
     world_line[0] = 0;
-    /* turning to look is free; you only spend a turn when you move */
-    if (player.facing != face) {
-        player.facing = face;
-        vision_update();
-        return;
-    }
+    player.facing = face;
     nx = player.x + facing_dx[face];
     ny = player.y + facing_dy[face];
     t = tile_at(nx, ny);
@@ -210,7 +222,7 @@ static void try_move(uint8_t face)
         return;
     }
     it = item_at(nx, ny);
-    if (it && (it->kind == IT_CHEST || it->kind == IT_CHEST_OPEN)) {
+    if (it && it->kind == IT_CHEST) {
         bump_chest(it);
         after_player_action();
         return;
@@ -222,6 +234,7 @@ static void try_move(uint8_t face)
         return;
     }
     if (!walkable_tile(t)) {
+        vision_update();            /* you turned, so you can see that way now */
         log_set(log_line, "A WALL");
         return;
     }

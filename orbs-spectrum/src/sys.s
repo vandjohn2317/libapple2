@@ -14,6 +14,8 @@
 	.globl	_print_ptr
 	.globl	_print_attr
 	.globl	_kbd
+	.globl	_kbd_down
+	.globl	kbd_isr
 	.globl	_blit_w
 	.globl	_blit_h
 	.globl	_font_gfx
@@ -23,7 +25,16 @@ _blit_src::	.ds 2		; source bitmap
 _blit_attr::	.ds 1		; attribute byte to stamp
 _print_ptr::	.ds 2		; zero-terminated string
 _print_attr::	.ds 1
-_kbd::		.ds 8		; eight half-rows, 1 = pressed, bit 0 = first key
+; Nine "half-rows": the keyboard's eight, then the Kempston stick as a ninth.
+;   _kbd       what went DOWN since the game last asked (rising edges)
+;   _kbd_down  what is down right now
+; A rising edge is latched once and once only, so a key held across a turn
+; does not read as a second press -- that is what auto-repeat below is for.
+_kbd::		.ds 9
+_kbd_down::	.ds 9
+_kbd_seen::	.ds 9		; the edges the interrupt has caught, not yet taken
+kbd_last::	.ds 9		; what was down on the previous frame
+kbd_n::		.ds 1
 _blit_w::	.ds 1		; cells across, for fill_attr and bar
 _blit_h::	.ds 1		; rows for fill_attr, fill pixels for bar
 
@@ -416,29 +427,77 @@ bar_line:
 	ret
 
 ;--------------------------------------------------------------------------
-; void kbd_scan(void)  -- reads the eight half-rows into kbd[]
-_kbd_scan::
-	ld	hl, #_kbd
+; kbd_isr -- scan the keyboard and the stick, and latch what went DOWN.
+; Called fifty times a second from the frame interrupt.
+;
+; THE GAME DOES NOT LOOK AT THE KEYBOARD WHILE IT IS DRAWING, and drawing a
+; turn takes the best part of half a second. A key pressed and let go inside
+; that window used to be a key the game never saw: the press vanished and the
+; NEXT one moved the hero, which is what "sometimes the second press
+; registers, not the first" is. The interrupt catches the edge instead and
+; holds it until the turn loop is ready to ask.
+kbd_isr::
+	ld	a, #8
+	ld	(kbd_n), a
+	ld	ix, #kbd_last
+	ld	hl, #_kbd_seen
+	ld	de, #_kbd_down
 	ld	bc, #0xFEFE
-	ld	e, #8
 1$:
 	in	a, (c)
 	cpl
 	and	#0x1F
+	ld	(de), a		; what is down now
+	push	bc
+	ld	b, a
+	ld	a, 0 (ix)	; what was down last frame
+	cpl
+	and	b		; ...so this is what just went down
+	or	(hl)
 	ld	(hl), a
+	ld	0 (ix), b
+	pop	bc
 	inc	hl
+	inc	de
+	inc	ix
 	rlc	b
-	dec	e
+	ld	a, (kbd_n)
+	dec	a
+	ld	(kbd_n), a
 	jr	nz, 1$
+	; the Kempston stick, as a ninth half-row. A machine without one answers
+	; 0xFF on the port, which is every direction at once: read that as nothing.
+	in	a, (0x1F)
+	cp	#0xFF
+	jr	nz, 2$
+	xor	a
+2$:
+	and	#0x1F
+	ld	(de), a
+	ld	b, a
+	ld	a, 0 (ix)
+	cpl
+	and	b
+	or	(hl)
+	ld	(hl), a
+	ld	0 (ix), b
 	ret
 
 ;--------------------------------------------------------------------------
-; uint8_t kempston(void)  -- 000FUDLR, 0 when no interface answers
-_kempston::
-	in	a, (0x1F)
-	cp	#0xFF
-	jr	nz, 1$
-	xor	a
+; void kbd_take(void) -- move the latched edges into kbd[] and empty the
+; latch, with the interrupt held off so a press cannot land between the read
+; and the clear.
+_kbd_take::
+	di
+	ld	hl, #_kbd_seen
+	ld	de, #_kbd
+	ld	b, #9
 1$:
-	and	#0x1F
+	ld	a, (hl)
+	ld	(de), a
+	ld	(hl), #0
+	inc	hl
+	inc	de
+	djnz	1$
+	ei
 	ret

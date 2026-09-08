@@ -15,6 +15,7 @@
 	.module crt0
 	.globl	_main
 	.globl	_isr_frames
+	.globl	kbd_isr
 	.globl	l__DATA
 	.globl	s__DATA
 	.globl	l__INITIALIZER
@@ -46,14 +47,23 @@ init::
 	halt
 	jr	1$
 
-; The frame interrupt: count frames, nothing else. Everything the game does
-; happens in the main loop, paced off this counter.
+; The frame interrupt: count frames and read the keyboard. Everything else
+; the game does happens in the main loop, paced off this counter -- but the
+; keys have to be caught here, because the main loop spends most of a turn
+; drawing and would miss a press that came and went while it did.
 isr:
 	push	af
+	push	bc
+	push	de
 	push	hl
+	push	ix		; the compiler keeps its frame pointer here
 	ld	hl, #_isr_frames
 	inc	(hl)
+	call	kbd_isr
+	pop	ix
 	pop	hl
+	pop	de
+	pop	bc
 	pop	af
 	ei
 	reti
