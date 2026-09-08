@@ -1,0 +1,4 @@
+build/
+src/gfx.s
+src/gfx.h
+__pycache__/
